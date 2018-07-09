@@ -1,0 +1,147 @@
+<!--
+  ~ Copyright (c) 2008-2017 Haulmont. All rights reserved.
+  ~ Use is subject to license terms, see http://www.cuba-platform.com/commercial-software-license for details.
+  -->
+
+<html>
+<head>
+    <title>IDP login demo with REST-API</title>
+    <script src="jquery-3.2.1.min.js"></script>
+    <style type="text/css">
+        #users {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<h1>IDP login demo with REST-API</h1>
+
+<script type="application/javascript">
+    var oauth2Token = null;
+
+    function checkIdpStatus() {
+        console.log('Check if we already logged in IDP');
+
+        $.get({
+            url: '/app/rest/v2/idp/status',
+            success: function (data) {
+                if (data.idpTicket) {
+                    loginWithIdp(data.idpTicket);
+                }
+            }
+        })
+    }
+
+    function loginWithIdp(idpTicket) {
+        console.log("IDP ticket: " + idpTicket);
+
+        history.pushState("", document.title, window.location.pathname);
+
+        $.post({
+            url: '/app/rest/v2/idp/token',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': 'Basic Y2xpZW50OnNlY3JldA=='
+            },
+            dataType: 'json',
+            data: {
+                idp_ticket: idpTicket
+            },
+            success: function (data) {
+                oauth2Token = data.access_token;
+
+                loadUsers();
+            }
+        })
+    }
+
+    function tryToLoginWithIdp() {
+        var urlHash = window.location.hash;
+
+        var idpTicketParameter = '#idp_ticket=';
+        if (urlHash && urlHash.indexOf(idpTicketParameter) >= 0) {
+            console.log("Try to login to CUBA REST-API!");
+
+            var idpTicket = urlHash.substring(urlHash.indexOf(idpTicketParameter) + idpTicketParameter.length);
+            loginWithIdp(idpTicket);
+        } else {
+            // check IDP status
+            checkIdpStatus();
+        }
+    }
+    
+    function loadUsers() {
+        if (!oauth2Token) {
+            return;
+        }
+
+        $.get({
+            url: '/app/rest/v2/entities/sec$User?view=_local',
+            headers: {
+                'Authorization': 'Bearer ' + oauth2Token,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            success: function (data) {
+                $('#loginLink').hide();
+                $('#users').show();
+
+                $('#usersList').empty();
+
+                $.each(data, function (i, user) {
+                    $('#usersList').append("<li>" + user.name + " (" + user.email + ")</li>");
+                });
+            }
+        });
+    }
+
+    function logout() {
+        $.post({
+            url: '/app/rest/v2/oauth/revoke',
+            headers: {
+                'Authorization': 'Basic Y2xpZW50OnNlY3JldA==',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            data: {
+                token: oauth2Token,
+                token_type: 'access_token'
+            },
+            success: function (data) {
+                if (data.location) {
+                    console.log('Redirect to ' + data.location);
+
+                    location.href = data.location;
+                }
+
+                oauth2Token = null;
+            }
+        });
+    }
+
+    tryToLoginWithIdp();
+</script>
+
+<a id="loginLink" href="/app/rest/v2/idp/login">
+    Login with IDP
+</a>
+
+<br/>
+
+<a id="logoutLink" href="#" onclick="logout()">
+    Logout
+</a>
+
+<br/>
+
+<button onclick="loadUsers()">Reload users</button>
+
+<div id="users">
+    You are logged in!
+
+    <h1>Users</h1>
+
+    <div id="usersList">
+    </div>
+</div>
+
+</body>
+</html>
